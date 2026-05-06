@@ -18,7 +18,7 @@ Canvas {
     property bool   small:                  !checked
     property bool   child:                  false
     property bool   highlightSelected:      false
-    property var    color:                  checked ? "green" : (child ? qgcPal.mapIndicatorChild : qgcPal.mapIndicator)
+    property var    color:                  checked ? "green" : (child ? qgcPal.mapIndicatorChild : _dayaVehicleColor())
     property real   anchorPointX:           _height / 2
     property real   anchorPointY:           _height / 2
     property bool   specifiesCoordinate:    true
@@ -48,6 +48,17 @@ Canvas {
     onVehicleYawChanged:    requestPaint()
 
     QGCPalette { id: qgcPal }
+
+    function _dayaVehicleColor() {
+        // Match Daya Station 2 default colors (sysid/vehicle.id).
+        // If you change colors in `config/drones.yaml`, update these to match.
+        const v = QGroundControl.multiVehicleManager.activeVehicle
+        const vid = v ? v.id : 0
+        if (vid === 1) return "#4fc3f7"
+        if (vid === 2) return "#81c784"
+        if (vid === 3) return "#ffb74d"
+        return qgcPal.mapIndicator
+    }
 
     function degreesToRadians(degrees) {
         return (Math.PI/180)*degrees

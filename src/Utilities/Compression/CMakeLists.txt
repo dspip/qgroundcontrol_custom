@@ -59,6 +59,11 @@ CPMAddPackage(
 # Suppress compiler warnings for zlib dependency
 if(zlib_ADDED)
     qgc_disable_dependency_warnings(zlibstatic)
+    # zlib C sources share headers/macros (e.g. COPY vs enum COPY); unity TU breaks the build
+    # when CMAKE_UNITY_BUILD leaks in from a parent cache or older configure.
+    if(TARGET zlibstatic)
+        set_target_properties(zlibstatic PROPERTIES UNITY_BUILD OFF)
+    endif()
 endif()
 
 # Export ZLIB paths for libarchive to find

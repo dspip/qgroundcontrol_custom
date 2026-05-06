@@ -26,12 +26,34 @@ MapQuickItem {
     property bool   _adsbVehicle:   vehicle ? false : true
     property var    _map:           map
     property bool   _multiVehicle:  QGroundControl.multiVehicleManager.vehicles.count > 1
+    property color  _dayaVehicleColor: {
+        // Match Daya Station 2 default colors (sysid/vehicle.id).
+        // If you change colors in `config/drones.yaml`, update these to match.
+        const vid = vehicle ? vehicle.id : 0
+        if (vid === 1) return "#4fc3f7"
+        if (vid === 2) return "#81c784"
+        if (vid === 3) return "#ffb74d"
+        return qgcPal.mapIndicator
+    }
 
     sourceItem: Item {
         id:         vehicleItem
         width:      vehicleIcon.width
         height:     vehicleIcon.height
         opacity:    _adsbVehicle || vehicle === _activeVehicle ? 1.0 : 0.5
+
+        // Colored ring to make vehicle identity obvious and consistent with Daya.
+        Rectangle {
+            anchors.centerIn:   vehicleIcon
+            width:              vehicleIcon.width + 6
+            height:             width
+            radius:             width / 2
+            color:              Qt.rgba(0, 0, 0, 0)
+            border.width:       3
+            border.color:       _adsbVehicle ? qgcPal.mapIndicator : _dayaVehicleColor
+            visible:            !_adsbVehicle
+            opacity:            0.9
+        }
 
         MultiEffect {
             source: vehicleIcon
