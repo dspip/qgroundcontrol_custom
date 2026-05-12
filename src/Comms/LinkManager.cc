@@ -28,6 +28,7 @@
 
 #include <QtCore/QApplicationStatic>
 #include <QtCore/QTimer>
+#include <QtNetwork/QHostAddress>
 
 QGC_LOGGING_CATEGORY(LinkManagerLog, "Comms.LinkManager")
 QGC_LOGGING_CATEGORY(LinkManagerVerboseLog, "Comms.LinkManager:verbose")
@@ -374,8 +375,102 @@ void LinkManager::loadLinkConfigurationList()
         }
     }
 
+    _ensureDayaMavlinkUdpLinks();
+
     // Enable automatic Serial PX4/3DR Radio hunting
     _configurationsLoaded = true;
+}
+
+bool LinkManager::_udpConfigurationHasTarget(const QString &host, quint16 port) const
+{
+    const QHostAddress addr(host);
+    if (addr.isNull()) {
+        return false;
+    }
+
+    for (const SharedLinkConfigurationPtr &cfg : _rgLinkConfigs) {
+        if (!cfg || cfg->type() != LinkConfiguration::TypeUdp) {
+            continue;
+        }
+
+        const UDPConfiguration *const udp = qobject_cast<const UDPConfiguration *>(cfg.get());
+        if (!udp) {
+            continue;
+        }
+
+        for (const std::shared_ptr<UDPClient> &target : udp->targetHosts()) {
+            if (target && (target->address == addr) && (target->port == port)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+void LinkManager::_ensureDayaMavlinkUdpLinks()
+{
+    const QByteArray flag = qgetenv("DAYA_QGC_AUTO_UDP_LINKS");
+    if (!flag.isEmpty()) {
+        const QString f = QString::fromUtf8(flag).trimmed().toLower();
+        if (f == QLatin1String("0") || f == QLatin1String("false") || f == QLatin1String("no") || f == QLatin1String("off")) {
+            return;
+        }
+    }
+
+    const QString spec = QString::fromUtf8(qgetenv("DAYA_QGC_MAVLINK_UDP_TARGETS")).trimmed();
+    QStringList parts;
+    if (spec.isEmpty()) {
+        // Daya slim stack: MAVLink relay on host (see Daya1.2.4 ``src/main.py`` / ``qgc/compose.yaml``).
+        parts << QStringLiteral("localhost:19540") << QStringLiteral("localhost:19541") << QStringLiteral("localhost:19542");
+    } else {
+        parts = spec.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    }
+
+    bool added = false;
+    for (QString part : parts) {
+        part = part.trimmed();
+        // Split on the **last** ':' so IPv4 ``127.0.0.1:19540`` is host + port (naive ``split(':')`` yields 5 parts).
+        const int colon = part.lastIndexOf(QLatin1Char(':'));
+        if (colon <= 0) {
+            qCWarning(LinkManagerLog) << "DAYA_QGC_MAVLINK_UDP_TARGETS: invalid entry (expected host:port):" << part;
+            continue;
+        }
+
+        const QString targetHost = part.left(colon).trimmed();
+        const QString portStr = part.mid(colon + 1).trimmed();
+        if (targetHost.isEmpty()) {
+            qCWarning(LinkManagerLog) << "DAYA_QGC_MAVLINK_UDP_TARGETS: empty host in" << part;
+            continue;
+        }
+
+        bool ok = false;
+        const quint16 targetPort = portStr.toUShort(&ok);
+        if (!ok || targetPort == 0U) {
+            qCWarning(LinkManagerLog) << "DAYA_QGC_MAVLINK_UDP_TARGETS: invalid port in" << part;
+            continue;
+        }
+        if (_udpConfigurationHasTarget(targetHost, targetPort)) {
+            continue;
+        }
+
+        auto *const udpConfig = new UDPConfiguration(tr("Daya MAVLink UDP :%1").arg(targetPort));
+        udpConfig->setLocalPort(0);
+        udpConfig->addHost(targetHost, targetPort);
+        // Bypass UDPConfiguration::setAutoConnect (it forces global AutoConnect UDP listen port / target).
+        udpConfig->LinkConfiguration::setAutoConnect(true);
+        SharedLinkConfigurationPtr shared = addConfiguration(udpConfig);
+        if (createConnectedLink(shared)) {
+            added = true;
+            qCInfo(LinkManagerLog) << "Daya: added + connected UDP comm link →" << targetHost << targetPort;
+        } else {
+            qCWarning(LinkManagerLog) << "Daya: added UDP config but createConnectedLink failed →" << targetHost << targetPort;
+        }
+    }
+
+    if (added) {
+        saveLinkConfigurationList();
+    }
 }
 
 void LinkManager::_addUDPAutoConnectLink()
@@ -613,7 +708,7 @@ SharedLinkConfigurationPtr LinkManager::addConfiguration(LinkConfiguration *conf
 void LinkManager::startAutoConnectedLinks()
 {
     for (SharedLinkConfigurationPtr &sharedConfig : _rgLinkConfigs) {
-        if (sharedConfig->isAutoConnect()) {
+        if (sharedConfig->isAutoConnect() && (sharedConfig->link() == nullptr)) {
             createConnectedLink(sharedConfig);
         }
     }

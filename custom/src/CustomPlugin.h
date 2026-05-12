@@ -1,7 +1,9 @@
 #pragma once
 
+#include <QtCore/QHash>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
+#include <QtCore/QMetaObject>
 #include <QtCore/QTranslator>
 #include <QtQml/QQmlAbstractUrlInterceptor>
 
@@ -11,7 +13,9 @@
 class CustomOptions;
 class CustomPlugin;
 class CustomSettings;
+class QFileSystemWatcher;
 class QQmlApplicationEngine;
+class QTimer;
 
 Q_DECLARE_LOGGING_CATEGORY(CustomLog)
 
@@ -86,8 +90,14 @@ public:
 
 private slots:
     void _advancedChanged(bool advanced);
+    void _queueMissionsAutosendRescan();
+    void _processMissionsAutosendDirectory();
+    void _ensureMvmVehicleAddedHook();
 
 private:
+    QString _dayaMissionsAutosendDir() const;
+    void _setupMissionsDirectoryWatcher();
+    void _scheduleMissionsAutosendRetryIfNeeded(bool needed);
     void _addSettingsEntry(const QString& title, const char* qmlFile, const char* iconFile = nullptr);
 
     CustomOptions *_options = nullptr;
@@ -97,6 +107,13 @@ private:
 
     QJsonArray _pendingDayaRegionVertices;
     static QJsonArray _variantListToVertexJson(const QVariantList &list);
+
+    QFileSystemWatcher *_missionsAutosendWatcher = nullptr;
+    QTimer *_missionsAutosendDebounce = nullptr;
+    QHash<int, qint64> _missionsAutosendLastSentMtimeMs;
+    QMetaObject::Connection _missionsAutosendVehicleAddedConnection;
+    QTimer *_missionsAutosendRetry = nullptr;
+    bool _missionsAutosendVehicleAddedHooked = false;
 };
 
 /*===========================================================================*/

@@ -124,6 +124,9 @@ private:
     void _addUDPAutoConnectLink();
     void _addMAVLinkForwardingLink();
     void _createDynamicForwardLink(const char *linkName, const QString &hostName);
+    /// Daya: auto-add UDP comm links (``DAYA_QGC_MAVLINK_UDP_TARGETS`` / relay ports).
+    void _ensureDayaMavlinkUdpLinks();
+    bool _udpConfigurationHasTarget(const QString &host, quint16 port) const;
 
     QTimer *_portListTimer = nullptr;
     QmlObjectListModel *_qmlConfigurations = nullptr;

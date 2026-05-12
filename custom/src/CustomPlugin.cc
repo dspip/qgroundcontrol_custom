@@ -1,6 +1,7 @@
 #include "CustomPlugin.h"
 #include "MissionManager.h"
 #include "MultiVehicleManager.h"
+#include "ParameterManager.h"
 #include "PlanMasterController.h"
 #include "QmlComponentInfo.h"
 #include "QGCLoggingCategory.h"
@@ -12,7 +13,10 @@
 #include <QtCore/QApplicationStatic>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
+#include <QtCore/QFileSystemWatcher>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QStandardPaths>
+#include <QtCore/QTimer>
 #include <QtPositioning/QGeoCoordinate>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlContext>
@@ -82,6 +86,165 @@ QJsonArray CustomPlugin::_variantListToVertexJson(const QVariantList &list)
     return out;
 }
 
+QString CustomPlugin::_dayaMissionsAutosendDir() const
+{
+    const QByteArray env = qgetenv("DAYA_MISSIONS_AUTOSEND_DIR");
+    if (!env.isEmpty()) {
+        return QDir(QString::fromUtf8(env)).absolutePath();
+    }
+    const QFileInfo areaFi(areaScanPlanSavePath());
+    QDir parentDir(areaFi.absolutePath());
+    if (!parentDir.cdUp()) {
+        return QString();
+    }
+    return parentDir.absoluteFilePath(QStringLiteral("missions"));
+}
+
+void CustomPlugin::_setupMissionsDirectoryWatcher()
+{
+    if (!qEnvironmentVariableIsEmpty("DAYA_QGC_DISABLE_MISSION_AUTOSEND")) {
+        return;
+    }
+    const QString dirPath = _dayaMissionsAutosendDir();
+    if (dirPath.isEmpty()) {
+        qCWarning(CustomLog) << "Daya mission autosend: could not resolve missions directory";
+        return;
+    }
+    if (!QDir().mkpath(dirPath)) {
+        qCWarning(CustomLog) << "Daya mission autosend: failed to create" << dirPath;
+        return;
+    }
+
+    _missionsAutosendWatcher = new QFileSystemWatcher(this);
+    if (!_missionsAutosendWatcher->addPath(dirPath)) {
+        qCWarning(CustomLog) << "Daya mission autosend: failed to watch" << dirPath;
+        delete _missionsAutosendWatcher;
+        _missionsAutosendWatcher = nullptr;
+        return;
+    }
+    (void) connect(_missionsAutosendWatcher, &QFileSystemWatcher::directoryChanged, this, &CustomPlugin::_queueMissionsAutosendRescan);
+
+    _missionsAutosendDebounce = new QTimer(this);
+    _missionsAutosendDebounce->setSingleShot(true);
+    int debounceMs = 800;
+    const QByteArray debounceEnv = qgetenv("DAYA_MISSIONS_AUTOSEND_DEBOUNCE_MS");
+    if (!debounceEnv.isEmpty()) {
+        bool ok = false;
+        const int v = debounceEnv.toInt(&ok);
+        if (ok && v >= 100 && v <= 60000) {
+            debounceMs = v;
+        }
+    }
+    _missionsAutosendDebounce->setInterval(debounceMs);
+    (void) connect(_missionsAutosendDebounce, &QTimer::timeout, this, &CustomPlugin::_processMissionsAutosendDirectory);
+
+    qCInfo(CustomLog) << "Daya mission autosend: watching" << dirPath << "debounce_ms" << debounceMs;
+    QTimer::singleShot(0, this, &CustomPlugin::_ensureMvmVehicleAddedHook);
+    QTimer::singleShot(1500, this, &CustomPlugin::_queueMissionsAutosendRescan);
+}
+
+void CustomPlugin::_ensureMvmVehicleAddedHook()
+{
+    if (!qEnvironmentVariableIsEmpty("DAYA_QGC_DISABLE_MISSION_AUTOSEND")) {
+        return;
+    }
+    if (_missionsAutosendVehicleAddedHooked) {
+        return;
+    }
+    MultiVehicleManager *const mvm = MultiVehicleManager::instance();
+    if (mvm == nullptr) {
+        QTimer::singleShot(500, this, &CustomPlugin::_ensureMvmVehicleAddedHook);
+        return;
+    }
+    _missionsAutosendVehicleAddedConnection = connect(mvm, &MultiVehicleManager::vehicleAdded, this, &CustomPlugin::_queueMissionsAutosendRescan);
+    _missionsAutosendVehicleAddedHooked = true;
+}
+
+void CustomPlugin::_scheduleMissionsAutosendRetryIfNeeded(bool needed)
+{
+    if (!needed) {
+        return;
+    }
+    if (_missionsAutosendRetry == nullptr) {
+        _missionsAutosendRetry = new QTimer(this);
+        _missionsAutosendRetry->setSingleShot(true);
+        (void) connect(_missionsAutosendRetry, &QTimer::timeout, this, &CustomPlugin::_queueMissionsAutosendRescan);
+    }
+    if (!_missionsAutosendRetry->isActive()) {
+        _missionsAutosendRetry->start(2500);
+    }
+}
+
+void CustomPlugin::_queueMissionsAutosendRescan()
+{
+    if (_missionsAutosendDebounce != nullptr) {
+        _missionsAutosendDebounce->start();
+    }
+}
+
+void CustomPlugin::_processMissionsAutosendDirectory()
+{
+    if (!qEnvironmentVariableIsEmpty("DAYA_QGC_DISABLE_MISSION_AUTOSEND")) {
+        return;
+    }
+    MultiVehicleManager *const mvm = MultiVehicleManager::instance();
+    const QString dirPath = _dayaMissionsAutosendDir();
+    if (dirPath.isEmpty()) {
+        return;
+    }
+    const QDir dir(dirPath);
+    if (!dir.exists()) {
+        return;
+    }
+    const QStringList names = dir.entryList(QStringList{QStringLiteral("drone-*.plan")}, QDir::Files, QDir::Name);
+    static const QRegularExpression re(QStringLiteral(R"(^drone-(\d+)\.plan$)"));
+    bool scheduleRetry = false;
+    for (const QString &name : names) {
+        const QRegularExpressionMatch m = re.match(name);
+        if (!m.hasMatch()) {
+            continue;
+        }
+        const int mavId = m.captured(1).toInt();
+        if (mavId <= 0 || mavId > 255) {
+            continue;
+        }
+        const QString path = dir.absoluteFilePath(name);
+        const QFileInfo fi(path);
+        if (!fi.exists() || fi.size() < 32) {
+            continue;
+        }
+        const qint64 mt = fi.lastModified().toMSecsSinceEpoch();
+        if (_missionsAutosendLastSentMtimeMs.value(mavId) == mt) {
+            continue;
+        }
+        if (mvm == nullptr) {
+            scheduleRetry = true;
+            continue;
+        }
+        Vehicle *const v = mvm->getVehicleById(mavId);
+        if (v == nullptr) {
+            scheduleRetry = true;
+            continue;
+        }
+        if (!v->parameterManager()->parametersReady()) {
+            scheduleRetry = true;
+            continue;
+        }
+        if (!v->initialPlanRequestComplete()) {
+            scheduleRetry = true;
+            continue;
+        }
+        if (v->missionManager()->inProgress()) {
+            scheduleRetry = true;
+            continue;
+        }
+        qCInfo(CustomLog) << "Daya mission autosend: uploading" << path << "to vehicle id" << mavId;
+        PlanMasterController::sendPlanToVehicle(v, path);
+        _missionsAutosendLastSentMtimeMs.insert(mavId, mt);
+    }
+    _scheduleMissionsAutosendRetryIfNeeded(scheduleRetry);
+}
+
 QString CustomPlugin::areaScanPlanSavePath() const
 {
     const QByteArray fullPath = qgetenv("DAYA_AREA_SCAN_PLAN");
@@ -144,6 +307,19 @@ void CustomPlugin::postSaveToJson(PlanMasterController *pController, QJsonObject
 
 void CustomPlugin::cleanup()
 {
+    (void) disconnect(_missionsAutosendVehicleAddedConnection);
+    _missionsAutosendVehicleAddedConnection = QMetaObject::Connection();
+    _missionsAutosendVehicleAddedHooked = false;
+    if (_missionsAutosendRetry != nullptr) {
+        _missionsAutosendRetry->stop();
+    }
+    if (_missionsAutosendDebounce != nullptr) {
+        _missionsAutosendDebounce->stop();
+    }
+    if (_missionsAutosendWatcher != nullptr) {
+        _missionsAutosendWatcher->removePaths(_missionsAutosendWatcher->directories());
+    }
+
     if (_qmlEngine) {
         _qmlEngine->removeUrlInterceptor(_selector);
     }
@@ -361,6 +537,8 @@ QQmlApplicationEngine* CustomPlugin::createQmlApplicationEngine(QObject* parent)
 
     // Expose custom invokables to all QML (including nested JS handlers where `import Daya` can fail).
     _qmlEngine->rootContext()->setContextProperty(QStringLiteral("DayaCustom"), this);
+
+    _setupMissionsDirectoryWatcher();
 
     return _qmlEngine;
 }
