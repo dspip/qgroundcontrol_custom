@@ -158,6 +158,100 @@ Item {
         }
     }
 
+    Rectangle {
+        id:                     dayaStationParamsPanel
+        readonly property real pad: ScreenTools.defaultFontPixelWidth * 0.5
+        anchors.left:           parent.left
+        anchors.top:            dayaRegionPanel.bottom
+        anchors.margins:        _toolsMargin
+        anchors.topMargin:      _toolsMargin
+        width:                  dayaStationParamsCol.implicitWidth + pad * 2
+        height:                 dayaStationParamsCol.implicitHeight + pad * 2
+        radius:                 4
+        color:                  qgcPal.windowShade
+        opacity:                0.94
+        border.width:           1
+        border.color:           qgcPal.buttonBorder
+
+        function _dayaReloadStationParams() {
+            var p = DayaCustom.loadDayaStationParams()
+            var sa = (p["survey_alt_m"] !== undefined) ? p["survey_alt_m"] : 30
+            var rv = (p["revisit_s"] !== undefined) ? p["revisit_s"] : 8
+            var hf = (p["camera_hfov_deg"] !== undefined) ? p["camera_hfov_deg"] : 78
+            surveyAltField.text = Number(sa).toFixed(1)
+            revisitField.text = Number(rv).toFixed(1)
+            hfovField.text = Number(hf).toFixed(1)
+        }
+
+        Column {
+            id:                     dayaStationParamsCol
+            anchors.centerIn:       parent
+            spacing:                dayaStationParamsPanel.pad
+
+            QGCLabel {
+                width:                  ScreenTools.defaultFontPixelWidth * 28
+                wrapMode:               Text.WordWrap
+                font.pointSize:         ScreenTools.smallFontPointSize
+                color:                  qgcPal.text
+                text:                   qsTr("Station scan params (JSON next to area.plan). Save here, then use Allocate in the Station video app.")
+            }
+
+            Row {
+                spacing: dayaStationParamsPanel.pad
+                QGCLabel {
+                    text:                   qsTr("Survey alt (m):")
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                    color:                  qgcPal.text
+                }
+                QGCTextField {
+                    id:                     surveyAltField
+                    width:                  ScreenTools.defaultFontPixelWidth * 10
+                    numericValuesOnly:      true
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                }
+            }
+            Row {
+                spacing: dayaStationParamsPanel.pad
+                QGCLabel {
+                    text:                   qsTr("Revisit (s):")
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                    color:                  qgcPal.text
+                }
+                QGCTextField {
+                    id:                     revisitField
+                    width:                  ScreenTools.defaultFontPixelWidth * 10
+                    numericValuesOnly:      true
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                }
+            }
+            Row {
+                spacing: dayaStationParamsPanel.pad
+                QGCLabel {
+                    text:                   qsTr("Camera HFOV (°):")
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                    color:                  qgcPal.text
+                }
+                QGCTextField {
+                    id:                     hfovField
+                    width:                  ScreenTools.defaultFontPixelWidth * 10
+                    numericValuesOnly:      true
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                }
+            }
+            QGCButton {
+                text:       qsTr("Save station params")
+                onClicked:  {
+                    var ok = DayaCustom.saveDayaStationParams(Number(surveyAltField.text), Number(revisitField.text), Number(hfovField.text))
+                    if (ok) {
+                        dayaStationParamsPanel._dayaReloadStationParams()
+                    }
+                }
+            }
+
+            Component.onCompleted: dayaStationParamsPanel._dayaReloadStationParams()
+        }
+    }
+
     // Top-right run stamp so it's obvious which QGC run is active.
     Rectangle {
         id:                     _dayaRunStampPanel

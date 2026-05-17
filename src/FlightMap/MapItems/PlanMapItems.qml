@@ -25,6 +25,22 @@ Item {
     property var    _guidedController:          globals.guidedControllerFlyView
     property var    _missionLineViewComponent
 
+    // When missions are synced from the vehicle, ``dayaPlanVisualColor`` from the JSON plan is not preserved.
+    // Fall back to MAVLink vehicle id (1 / 2 / 3) so multi-UAV paths match Daya Station colors.
+    readonly property string _dayaPathColorFallback: {
+        const v = _vehicle
+        const vid = v ? v.id : 0
+        if (vid === 1) return "#1976D2"
+        if (vid === 2) return "#388E3C"
+        if (vid === 3) return "#F9A825"
+        return ""
+    }
+
+    readonly property string _effectiveMissionPathColor: {
+        const c = _missionController.dayaPlanVisualColor
+        return (c && c.length > 0) ? c : _dayaPathColorFallback
+    }
+
     property string fmode: vehicle.flightMode
 
     // Add the mission item visuals to the map
@@ -58,6 +74,7 @@ Item {
 
         MapItemGroup {
             MissionLineView {
+                missionPathColor: _root._effectiveMissionPathColor
                 model: _missionController.simpleFlightPathSegments
             }
 
@@ -69,6 +86,8 @@ Item {
                     toCoord:        object ? object.coordinate2 : undefined
                     arrowPosition:  3
                     z:              QGroundControl.zOrderWaypointLines + 1
+                    arrowColor:     (_root._effectiveMissionPathColor && _root._effectiveMissionPathColor.length > 0)
+                                    ? _root._effectiveMissionPathColor : "white"
                 }
             }
         }

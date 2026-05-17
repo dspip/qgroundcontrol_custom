@@ -101,6 +101,7 @@ Item {
             z:              QGroundControl.zOrderMapItems
             missionItem:    _missionItem
             sequenceNumber: _missionItem.sequenceNumber
+            mapVehicle:     _root.vehicle
             onClicked:      _root.clicked(_missionItem.sequenceNumber)
             opacity:        _root.opacity
         }

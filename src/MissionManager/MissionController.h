@@ -92,6 +92,8 @@ public:
     Q_PROPERTY(bool                 flyThroughCommandsAllowed       MEMBER _flyThroughCommandsAllowed   NOTIFY planViewStateChanged)
     Q_PROPERTY(double               minAMSLAltitude                 MEMBER _minAMSLAltitude             NOTIFY minAMSLAltitudeChanged)          ///< Minimum altitude associated with this mission. Used to calculate percentages for terrain status.
     Q_PROPERTY(double               maxAMSLAltitude                 MEMBER _maxAMSLAltitude             NOTIFY maxAMSLAltitudeChanged)          ///< Maximum altitude associated with this mission. Used to calculate percentages for terrain status.
+    /// When set from a Daya-generated ``.plan`` (``dayaPlanVisualColor``), Plan/Fly map uses this for mission lines and waypoint markers.
+    Q_PROPERTY(QString              dayaPlanVisualColor             READ dayaPlanVisualColor          NOTIFY dayaPlanVisualColorChanged)
 
     Q_PROPERTY(QGroundControlQmlGlobal::AltitudeFrame globalAltitudeFrame         READ globalAltitudeFrame         WRITE setGlobalAltitudeFrame NOTIFY globalAltitudeFrameChanged)
     Q_PROPERTY(QGroundControlQmlGlobal::AltitudeFrame globalAltitudeFrameDefault  READ globalAltitudeFrameDefault  NOTIFY globalAltitudeFrameChanged)                               ///< Default to use for newly created items
@@ -269,6 +271,7 @@ public:
     bool                multipleLandPatternsAllowed (void) const;
     double              minAMSLAltitude             (void) const { return _minAMSLAltitude; }
     double              maxAMSLAltitude             (void) const { return _maxAMSLAltitude; }
+    QString             dayaPlanVisualColor         (void) const { return _dayaPlanVisualColor; }
 
     int currentMissionIndex         (void) const;
     int resumeMissionIndex          (void) const;
@@ -336,6 +339,7 @@ signals:
     void _recalcMissionFlightStatusSignal   (void);
     void _recalcFlightPathSegmentsSignal    (void);
     void globalAltitudeFrameChanged          (void);
+    void dayaPlanVisualColorChanged          (void);
 
 private slots:
     void _newMissionItemsAvailableFromVehicle   (bool removeAllRequested);
@@ -451,6 +455,7 @@ private:
     double                      _minAMSLAltitude =              0;
     double                      _maxAMSLAltitude =              0;
     bool                        _missionContainsVTOLTakeoff =   false;
+    QString                     _dayaPlanVisualColor;
 
     QGroundControlQmlGlobal::AltitudeFrame _globalAltFrame = QGroundControlQmlGlobal::AltitudeFrameRelative;
 

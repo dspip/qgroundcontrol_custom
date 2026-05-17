@@ -67,7 +67,12 @@ FlightMap {
         }
     }
     onCenterChanged: {
-        QGroundControl.flightMapPosition = _root.center
+        // Only publish map center to the global Flight/Plan shared position while this Fly map is visible.
+        // Otherwise the 500 ms vehicle-tracking timer keeps updating flightMapPosition and drags the Plan editor
+        // (and any other view bound to QGroundControl.flightMapPosition) even when the user is not in Fly view.
+        if (_root.visible) {
+            QGroundControl.flightMapPosition = _root.center
+        }
     }
 
     // We track whether the user has panned or not to correctly handle automatic map positioning
@@ -163,26 +168,17 @@ FlightMap {
             return
         }
         // We let FlightMap handle first vehicle position
+        // Daya: do not auto-pan / "soft recenter" when the vehicle leaves the inset — it fights manual map
+        // positioning and keeps dragging Plan/Fly shared flightMapPosition. Pip follow still uses _keepVehicleCentered.
         if (!_keepMapCenteredOnVehicle && firstVehiclePositionReceived && _activeVehicleCoordinate.isValid && !_disableVehicleTracking) {
             if (_keepVehicleCentered) {
                 _root.center = _activeVehicleCoordinate
-            } else {
-                if (firstVehiclePositionReceived && recenterNeeded()) {
-                    // Move the map such that the vehicle is centered within the inset area
-                    var vehiclePoint = _root.fromCoordinate(_activeVehicleCoordinate, false /* clipToViewport */)
-                    var centerInsetRect = _insetCenterRect()
-                    var centerInsetPoint = Qt.point(centerInsetRect.x + centerInsetRect.width / 2, centerInsetRect.y + centerInsetRect.height / 2)
-                    var centerOffset = Qt.point((_root.width / 2) - centerInsetPoint.x, (_root.height / 2) - centerInsetPoint.y)
-                    var vehicleOffsetPoint = Qt.point(vehiclePoint.x + centerOffset.x, vehiclePoint.y + centerOffset.y)
-                    var vehicleOffsetCoord = _root.toCoordinate(vehicleOffsetPoint, false /* clipToViewport */)
-                    animatedMapRecenter(_root.center, vehicleOffsetCoord)
-                }
             }
         }
     }
 
     on_ActiveVehicleCoordinateChanged: {
-        if (_keepMapCenteredOnVehicle && _activeVehicleCoordinate.isValid && !_disableVehicleTracking) {
+        if (_root.visible && _keepMapCenteredOnVehicle && _activeVehicleCoordinate.isValid && !_disableVehicleTracking) {
             _root.center = _activeVehicleCoordinate
         }
     }
@@ -205,7 +201,7 @@ FlightMap {
 
     Timer {
         interval:       500
-        running:        true
+        running:        _root.visible
         repeat:         true
         onTriggered:    updateMapToVehiclePosition()
     }

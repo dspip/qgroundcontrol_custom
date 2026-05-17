@@ -12,11 +12,15 @@
 
 #include <QtCore/QApplicationStatic>
 #include <QtCore/QDir>
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QFileSystemWatcher>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTimer>
+#include <QtCore/QVariantMap>
 #include <QtPositioning/QGeoCoordinate>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlContext>
@@ -257,6 +261,69 @@ QString CustomPlugin::areaScanPlanSavePath() const
     }
     const QString docs = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
     return docs + QStringLiteral("/Daya/area_to_scan/area.plan");
+}
+
+QString CustomPlugin::dayaStationParamsSavePath(void) const
+{
+    const QFileInfo fi(areaScanPlanSavePath());
+    return QFileInfo(fi.absoluteDir(), QStringLiteral("daya_station_params.json")).absoluteFilePath();
+}
+
+QVariantMap CustomPlugin::loadDayaStationParams(void) const
+{
+    QVariantMap m;
+    m.insert(QStringLiteral("survey_alt_m"), 30.0);
+    m.insert(QStringLiteral("revisit_s"), 8.0);
+    m.insert(QStringLiteral("camera_hfov_deg"), 78.0);
+    const QString path = dayaStationParamsSavePath();
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) {
+        return m;
+    }
+    QJsonParseError err{};
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+        return m;
+    }
+    const QJsonObject o = doc.object();
+    if (const QJsonValue v = o.value(QStringLiteral("survey_alt_m")); v.isDouble()) {
+        m.insert(QStringLiteral("survey_alt_m"), v.toDouble());
+    }
+    if (const QJsonValue v = o.value(QStringLiteral("revisit_s")); v.isDouble()) {
+        m.insert(QStringLiteral("revisit_s"), v.toDouble());
+    }
+    if (const QJsonValue v = o.value(QStringLiteral("camera_hfov_deg")); v.isDouble()) {
+        m.insert(QStringLiteral("camera_hfov_deg"), v.toDouble());
+    }
+    return m;
+}
+
+bool CustomPlugin::saveDayaStationParams(double surveyAltM, double revisitS, double cameraHfovDeg)
+{
+    const QString path = dayaStationParamsSavePath();
+    const QFileInfo fi(path);
+    if (!QDir().mkpath(fi.absolutePath())) {
+        qCWarning(CustomLog) << "saveDayaStationParams: failed to create directory" << fi.absolutePath();
+        return false;
+    }
+    QJsonObject o;
+    o.insert(QStringLiteral("version"), 1);
+    o.insert(QStringLiteral("survey_alt_m"), surveyAltM);
+    o.insert(QStringLiteral("revisit_s"), revisitS);
+    o.insert(QStringLiteral("camera_hfov_deg"), cameraHfovDeg);
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        qCWarning(CustomLog) << "saveDayaStationParams: open failed" << path;
+        return false;
+    }
+    const QByteArray bytes = QJsonDocument(o).toJson(QJsonDocument::Indented);
+    if (f.write(bytes) != bytes.size()) {
+        qCWarning(CustomLog) << "saveDayaStationParams: short write" << path;
+        return false;
+    }
+    f.close();
+    qCInfo(CustomLog) << "Daya station params saved" << path;
+    return true;
 }
 
 bool CustomPlugin::dayaRefreshMissionFromVehicle(void)

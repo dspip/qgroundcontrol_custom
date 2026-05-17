@@ -11,6 +11,20 @@ import QGroundControl.FlightMap
 MissionItemMapVisualBase {
     id: _root
 
+    function _planLineColor() {
+        const mc = _missionItem.masterController ? _missionItem.masterController.missionController : null
+        const c = mc ? mc.dayaPlanVisualColor : ""
+        if (c && c.length > 0) {
+            return c
+        }
+        const v = _root.vehicle
+        const vid = v ? v.id : 0
+        if (vid === 1) return "#1976D2"
+        if (vid === 2) return "#388E3C"
+        if (vid === 3) return "#F9A825"
+        return QGroundControl.globalPalette.mapMissionTrajectory
+    }
+
     indicatorComponent: indicatorComponent
 
     function hideItemVisuals() {
@@ -68,6 +82,7 @@ MissionItemMapVisualBase {
             z:              QGroundControl.zOrderMapItems
             missionItem:    _missionItem
             sequenceNumber: _missionItem.sequenceNumber
+            mapVehicle:     _root.vehicle
             onClicked:      if(_root.interactive)  _root.clicked(_missionItem.sequenceNumber)
             opacity:        _root.opacity
         }
@@ -103,7 +118,7 @@ MissionItemMapVisualBase {
                 mapControl:              _root.map
                 mapCircle:               _mapCircle
                 centerDragHandleVisible: false
-                borderColor:             _missionItem.terrainCollision ? "red" : QGroundControl.globalPalette.mapMissionTrajectory
+                borderColor:             _missionItem.terrainCollision ? "red" : (_planLineColor())
 
                 property bool blockSignals: false
 

@@ -7,12 +7,15 @@ import QGroundControl
 /// The MissionLineView control is used to add lines between mission items
 MapItemView {
     property bool showSpecialVisual: false
+    /// When non-empty (from Daya ``dayaPlanVisualColor`` on loaded plan), overrides default orange mission path.
+    property string missionPathColor: ""
+
     delegate: MapPolyline {
         line.width: 3
         // Note: Special visuals for ROI are hacked out for now since they are not working correctly
         line.color: _terrainCollision ?
                         "red" :
-                        (false/*showSpecialVisual*/ ? "green" : QGroundControl.globalPalette.mapMissionTrajectory)
+                        (false/*showSpecialVisual*/ ? "green" : (missionPathColor.length > 0 ? missionPathColor : QGroundControl.globalPalette.mapMissionTrajectory))
         z:          QGroundControl.zOrderWaypointLines
         path:       _calcMissionLinePath()
 

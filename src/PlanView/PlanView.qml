@@ -36,6 +36,19 @@ Item {
     property bool   _addWaypointOnClick: false
     property bool   _homePositionSet: _missionController.homePositionSet
 
+    readonly property string _planDayaPathColorFallback: {
+        const v = _planMasterController.controllerVehicle
+        const vid = v ? v.id : 0
+        if (vid === 1) return "#1976D2"
+        if (vid === 2) return "#388E3C"
+        if (vid === 3) return "#F9A825"
+        return ""
+    }
+    readonly property string _planEffectivePathColor: {
+        const c = _missionController.dayaPlanVisualColor
+        return (c && c.length > 0) ? c : _planDayaPathColorFallback
+    }
+
     readonly property int _layerMission: 1
     readonly property int _layerFence: 2
     readonly property int _layerRally: 3
@@ -324,6 +337,7 @@ Item {
             // Add lines between waypoints
             MissionLineView {
                 showSpecialVisual: _missionController.isROIBeginCurrentItem
+                missionPathColor: _root._planEffectivePathColor
                 model: _missionController.simpleFlightPathSegments
                 opacity: _editingLayer == _layerMission ? 1 : editorMap._nonInteractiveOpacity
             }
@@ -337,6 +351,8 @@ Item {
                     toCoord: object ? object.coordinate2 : undefined
                     arrowPosition: 3
                     z: QGroundControl.zOrderWaypointLines + 1
+                    arrowColor: (_root._planEffectivePathColor && _root._planEffectivePathColor.length > 0)
+                                ? _root._planEffectivePathColor : "white"
                 }
             }
 
@@ -505,6 +521,113 @@ Item {
             anchors.top: parent.top
             mapControl: editorMap
             autoHide: true
+        }
+
+        // Daya: survey alt / revisit / camera HFOV for Station (same JSON as Fly overlay) — visible while planning.
+        Rectangle {
+            id:                     dayaPlanStationParamsPanel
+            readonly property real _pad: ScreenTools.defaultFontPixelWidth * 0.5
+            anchors.top:            parent.top
+            anchors.topMargin:      _margin
+            anchors.left:           parent.left
+            anchors.leftMargin:     _margin + ((_editingLayer === _layerMission && toolStrip.visible) ? (toolStrip.width + _toolsMargin) : 0)
+            width:                    dayaPlanStationParamsCol.implicitWidth + _pad * 2
+            height:                   dayaPlanStationParamsCol.implicitHeight + _pad * 2
+            radius:                   4
+            z:                        QGroundControl.zOrderWidgets + 2
+            color:                    dayaPlanPal.windowShade
+            opacity:                  0.94
+            border.width:             1
+            border.color:             dayaPlanPal.buttonBorder
+
+            QGCPalette { id: dayaPlanPal; colorGroupEnabled: true }
+
+            function _dayaReloadStationParams() {
+                var p = DayaCustom.loadDayaStationParams()
+                var sa = (p["survey_alt_m"] !== undefined) ? p["survey_alt_m"] : 30
+                var rv = (p["revisit_s"] !== undefined) ? p["revisit_s"] : 8
+                var hf = (p["camera_hfov_deg"] !== undefined) ? p["camera_hfov_deg"] : 78
+                planSurveyAltField.text = Number(sa).toFixed(1)
+                planRevisitField.text = Number(rv).toFixed(1)
+                planHfovField.text = Number(hf).toFixed(1)
+            }
+
+            Column {
+                id:                     dayaPlanStationParamsCol
+                anchors.centerIn:       parent
+                spacing:                dayaPlanStationParamsPanel._pad
+
+                QGCLabel {
+                    width:                  ScreenTools.defaultFontPixelWidth * 28
+                    wrapMode:               Text.WordWrap
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                    color:                  dayaPlanPal.text
+                    text:                   qsTr("Daya — Station scan params (saved next to area.plan). Use with Allocate in Station.")
+                }
+
+                Row {
+                    spacing: dayaPlanStationParamsPanel._pad
+                    QGCLabel {
+                        text:                   qsTr("Survey alt (m):")
+                        font.pointSize:         ScreenTools.smallFontPointSize
+                        color:                  dayaPlanPal.text
+                    }
+                    QGCTextField {
+                        id:                     planSurveyAltField
+                        width:                  ScreenTools.defaultFontPixelWidth * 10
+                        numericValuesOnly:      true
+                        font.pointSize:         ScreenTools.smallFontPointSize
+                    }
+                }
+                Row {
+                    spacing: dayaPlanStationParamsPanel._pad
+                    QGCLabel {
+                        text:                   qsTr("Revisit (s):")
+                        font.pointSize:         ScreenTools.smallFontPointSize
+                        color:                  dayaPlanPal.text
+                    }
+                    QGCTextField {
+                        id:                     planRevisitField
+                        width:                  ScreenTools.defaultFontPixelWidth * 10
+                        numericValuesOnly:      true
+                        font.pointSize:         ScreenTools.smallFontPointSize
+                    }
+                }
+                Row {
+                    spacing: dayaPlanStationParamsPanel._pad
+                    QGCLabel {
+                        text:                   qsTr("Camera HFOV (°):")
+                        font.pointSize:         ScreenTools.smallFontPointSize
+                        color:                  dayaPlanPal.text
+                    }
+                    QGCTextField {
+                        id:                     planHfovField
+                        width:                  ScreenTools.defaultFontPixelWidth * 10
+                        numericValuesOnly:      true
+                        font.pointSize:         ScreenTools.smallFontPointSize
+                    }
+                }
+                QGCButton {
+                    text:       qsTr("Save station params")
+                    onClicked:  {
+                        var ok = DayaCustom.saveDayaStationParams(Number(planSurveyAltField.text), Number(planRevisitField.text), Number(planHfovField.text))
+                        if (ok) {
+                            dayaPlanStationParamsPanel._dayaReloadStationParams()
+                        }
+                    }
+                }
+
+                Component.onCompleted: dayaPlanStationParamsPanel._dayaReloadStationParams()
+            }
+        }
+
+        Connections {
+            target: _root
+            function onVisibleChanged() {
+                if (_root.visible) {
+                    dayaPlanStationParamsPanel._dayaReloadStationParams()
+                }
+            }
         }
 
         PlanViewRightPanel {

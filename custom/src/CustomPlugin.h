@@ -72,6 +72,11 @@ public:
     /// Target path for Daya "Execute" (env `DAYA_AREA_SCAN_PLAN` full path, else `DAYA_AREA_PLAN_DIR`/area.plan, else Documents/…).
     Q_INVOKABLE QString areaScanPlanSavePath() const;
 
+    /// ``daya_station_params.json`` next to ``area.plan`` (survey altitude, revisit interval, camera HFOV for the Station app).
+    Q_INVOKABLE QString dayaStationParamsSavePath(void) const;
+    Q_INVOKABLE QVariantMap loadDayaStationParams(void) const;
+    Q_INVOKABLE bool saveDayaStationParams(double surveyAltM, double revisitS, double cameraHfovDeg);
+
     /// Pull mission (and follow-on geo/rally chain) from the active vehicle into QGC. Safe from Fly view.
     Q_INVOKABLE bool dayaRefreshMissionFromVehicle(void);
 

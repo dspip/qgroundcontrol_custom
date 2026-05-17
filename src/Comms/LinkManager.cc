@@ -422,7 +422,7 @@ void LinkManager::_ensureDayaMavlinkUdpLinks()
     QStringList parts;
     if (spec.isEmpty()) {
         // Daya slim stack: MAVLink relay on host (see Daya1.2.4 ``src/main.py`` / ``qgc/compose.yaml``).
-        parts << QStringLiteral("localhost:19540") << QStringLiteral("localhost:19541") << QStringLiteral("localhost:19542");
+        parts << QStringLiteral("127.0.0.1:19540") << QStringLiteral("127.0.0.1:19541") << QStringLiteral("127.0.0.1:19542");
     } else {
         parts = spec.split(QLatin1Char(','), Qt::SkipEmptyParts);
     }

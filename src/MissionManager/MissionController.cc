@@ -598,6 +598,10 @@ void MissionController::_setupNewVisualItems(QmlObjectListModel* newItems)
 
 void MissionController::removeAll(void)
 {
+    if (!_dayaPlanVisualColor.isEmpty()) {
+        _dayaPlanVisualColor.clear();
+        emit dayaPlanVisualColorChanged();
+    }
     _setupNewVisualItems();
     _initAllVisualItems();
     setDirty(true);
@@ -793,6 +797,16 @@ bool MissionController::_loadJsonMissionFileV2(const QJsonObject& json, QmlObjec
         }
     }
 
+    const QJsonValue dayaColorVal = json[QStringLiteral("dayaPlanVisualColor")];
+    QString newDayaColor;
+    if (dayaColorVal.isString()) {
+        newDayaColor = dayaColorVal.toString().trimmed();
+    }
+    if (newDayaColor != _dayaPlanVisualColor) {
+        _dayaPlanVisualColor = newDayaColor;
+        emit dayaPlanVisualColorChanged();
+    }
+
     return true;
 }
 
@@ -905,6 +919,11 @@ bool MissionController::loadTextFile(QFile& file, QString& errorString)
 
     _initLoadedVisualItems(loadedVisualItems);
 
+    if (!_dayaPlanVisualColor.isEmpty()) {
+        _dayaPlanVisualColor.clear();
+        emit dayaPlanVisualColorChanged();
+    }
+
     return true;
 }
 
@@ -965,6 +984,9 @@ void MissionController::save(QJsonObject& json)
     }
 
     json[_jsonItemsKey] = rgJsonMissionItems;
+    if (!_dayaPlanVisualColor.isEmpty()) {
+        json[QStringLiteral("dayaPlanVisualColor")] = _dayaPlanVisualColor;
+    }
 }
 
 FlightPathSegment* MissionController::_createFlightPathSegmentWorker(VisualItemPair& pair, bool mavlinkTerrainFrame)

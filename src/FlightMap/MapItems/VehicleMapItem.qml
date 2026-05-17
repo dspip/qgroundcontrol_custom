@@ -27,12 +27,11 @@ MapQuickItem {
     property var    _map:           map
     property bool   _multiVehicle:  QGroundControl.multiVehicleManager.vehicles.count > 1
     property color  _dayaVehicleColor: {
-        // Match Daya Station 2 default colors (sysid/vehicle.id).
-        // If you change colors in `config/drones.yaml`, update these to match.
+        // Match Daya ``config/drones.yaml`` (MAVLink vehicle id 1 / 2 / 3).
         const vid = vehicle ? vehicle.id : 0
-        if (vid === 1) return "#4fc3f7"
-        if (vid === 2) return "#81c784"
-        if (vid === 3) return "#ffb74d"
+        if (vid === 1) return "#1976D2"
+        if (vid === 2) return "#388E3C"
+        if (vid === 3) return "#F9A825"
         return qgcPal.mapIndicator
     }
 

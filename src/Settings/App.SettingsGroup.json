@@ -147,7 +147,7 @@
             "shortDesc": "Displays an on-screen virtual joystick in the Fly view for manual vehicle control.",
             "longDesc": "If this option is enabled the virtual joystick will be shown on the Fly view.",
             "type": "bool",
-            "default": false,
+            "default": true,
             "label": "Virtual Joystick",
             "keywords": "joystick,virtual stick"
         },
