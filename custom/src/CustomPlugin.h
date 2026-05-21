@@ -80,6 +80,9 @@ public:
     /// Pull mission (and follow-on geo/rally chain) from the active vehicle into QGC. Safe from Fly view.
     Q_INVOKABLE bool dayaRefreshMissionFromVehicle(void);
 
+    /// Load ``drone-{mavId}.plan`` from the missions directory into Plan View (does not upload to the vehicle).
+    Q_INVOKABLE bool dayaLoadDronePlanInPlanView(QObject *planMaster, int mavId);
+
     // Overrides from QGCCorePlugin
 
     void cleanup() final;
@@ -102,6 +105,7 @@ private slots:
 private:
     QString _dayaMissionsAutosendDir() const;
     void _setupMissionsDirectoryWatcher();
+    void _clearMissionsAutosendSentCache();
     void _scheduleMissionsAutosendRetryIfNeeded(bool needed);
     void _addSettingsEntry(const QString& title, const char* qmlFile, const char* iconFile = nullptr);
 

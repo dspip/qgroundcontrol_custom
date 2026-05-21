@@ -141,6 +141,10 @@ Item {
                         if (!_planMaster)
                             return
                         _dayaFinishRegion()
+                        DayaCustom.saveDayaStationParams(
+                            Number(surveyAltField.text),
+                            Number(revisitField.text),
+                            Number(hfovField.text))
                         var path = DayaCustom.areaScanPlanSavePath()
                         DayaCustom.saveFlyViewRegionPlan(_planMaster, path, _dayaCoordsVariantListForSave())
                     }
@@ -193,7 +197,7 @@ Item {
                 wrapMode:               Text.WordWrap
                 font.pointSize:         ScreenTools.smallFontPointSize
                 color:                  qgcPal.text
-                text:                   qsTr("Station scan params (JSON next to area.plan). Save here, then use Allocate in the Station video app.")
+                text:                   qsTr("Station scan params (saved on Execute and to daya_station_params.json). Survey alt sets waypoint height and line spacing.")
             }
 
             Row {

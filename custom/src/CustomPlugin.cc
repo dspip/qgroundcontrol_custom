@@ -10,6 +10,8 @@
 #include "AppSettings.h"
 #include "Vehicle.h"
 
+#include <algorithm>
+
 #include <QtCore/QApplicationStatic>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -174,15 +176,34 @@ void CustomPlugin::_scheduleMissionsAutosendRetryIfNeeded(bool needed)
         _missionsAutosendRetry->setSingleShot(true);
         (void) connect(_missionsAutosendRetry, &QTimer::timeout, this, &CustomPlugin::_queueMissionsAutosendRescan);
     }
+    int retryMs = 2500;
+    const QByteArray retryEnv = qgetenv("DAYA_MISSIONS_AUTOSEND_RETRY_MS");
+    if (!retryEnv.isEmpty()) {
+        bool ok = false;
+        const int v = retryEnv.toInt(&ok);
+        if (ok && v >= 500 && v <= 120000) {
+            retryMs = v;
+        }
+    }
     if (!_missionsAutosendRetry->isActive()) {
-        _missionsAutosendRetry->start(2500);
+        _missionsAutosendRetry->start(retryMs);
     }
 }
 
 void CustomPlugin::_queueMissionsAutosendRescan()
 {
+    // Do not clear the full sent-mtime cache here — Execute writes drone-1/2/3.plan in a burst and
+    // wiping the cache forces redundant uploads while MAVLink may still be busy on vehicle 1.
     if (_missionsAutosendDebounce != nullptr) {
         _missionsAutosendDebounce->start();
+    }
+}
+
+void CustomPlugin::_clearMissionsAutosendSentCache()
+{
+    if (!_missionsAutosendLastSentMtimeMs.isEmpty()) {
+        _missionsAutosendLastSentMtimeMs.clear();
+        qCInfo(CustomLog) << "Daya mission autosend: cleared sent-mtime cache";
     }
 }
 
@@ -200,9 +221,14 @@ void CustomPlugin::_processMissionsAutosendDirectory()
     if (!dir.exists()) {
         return;
     }
-    const QStringList names = dir.entryList(QStringList{QStringLiteral("drone-*.plan")}, QDir::Files, QDir::Name);
+    QStringList names = dir.entryList(QStringList{QStringLiteral("drone-*.plan")}, QDir::Files, QDir::Name);
     static const QRegularExpression re(QStringLiteral(R"(^drone-(\d+)\.plan$)"));
-    bool scheduleRetry = false;
+    struct PendingPlan {
+        int mavId = 0;
+        QString path;
+        qint64 mtimeMs = 0;
+    };
+    QList<PendingPlan> pending;
     for (const QString &name : names) {
         const QRegularExpressionMatch m = re.match(name);
         if (!m.hasMatch()) {
@@ -221,20 +247,28 @@ void CustomPlugin::_processMissionsAutosendDirectory()
         if (_missionsAutosendLastSentMtimeMs.value(mavId) == mt) {
             continue;
         }
+        pending.append(PendingPlan{mavId, path, mt});
+    }
+    std::sort(pending.begin(), pending.end(), [](const PendingPlan &a, const PendingPlan &b) {
+        return a.mavId < b.mavId; // drone-1 / MAV 1 first (UAV1 often connects last in SITL)
+    });
+
+    bool scheduleRetry = false;
+    bool startedUpload = false;
+    for (const PendingPlan &plan : pending) {
+        const int mavId = plan.mavId;
         if (mvm == nullptr) {
             scheduleRetry = true;
             continue;
         }
         Vehicle *const v = mvm->getVehicleById(mavId);
         if (v == nullptr) {
+            qCInfo(CustomLog) << "Daya mission autosend: vehicle id" << mavId << "not connected — retry";
             scheduleRetry = true;
             continue;
         }
         if (!v->parameterManager()->parametersReady()) {
-            scheduleRetry = true;
-            continue;
-        }
-        if (!v->initialPlanRequestComplete()) {
+            qCInfo(CustomLog) << "Daya mission autosend: vehicle" << mavId << "parameters not ready — retry";
             scheduleRetry = true;
             continue;
         }
@@ -242,9 +276,15 @@ void CustomPlugin::_processMissionsAutosendDirectory()
             scheduleRetry = true;
             continue;
         }
-        qCInfo(CustomLog) << "Daya mission autosend: uploading" << path << "to vehicle id" << mavId;
-        PlanMasterController::sendPlanToVehicle(v, path);
-        _missionsAutosendLastSentMtimeMs.insert(mavId, mt);
+        // One MAVLink mission transfer at a time (PX4 SITL + relay); finish UAV1 before UAV2/3.
+        if (startedUpload) {
+            scheduleRetry = true;
+            continue;
+        }
+        qCInfo(CustomLog) << "Daya mission autosend: uploading" << plan.path << "to vehicle id" << mavId;
+        PlanMasterController::sendPlanToVehicle(v, plan.path);
+        _missionsAutosendLastSentMtimeMs.insert(mavId, plan.mtimeMs);
+        startedUpload = true;
     }
     _scheduleMissionsAutosendRetryIfNeeded(scheduleRetry);
 }
@@ -323,6 +363,8 @@ bool CustomPlugin::saveDayaStationParams(double surveyAltM, double revisitS, dou
     }
     f.close();
     qCInfo(CustomLog) << "Daya station params saved" << path;
+    _clearMissionsAutosendSentCache();
+    _queueMissionsAutosendRescan();
     return true;
 }
 
@@ -334,6 +376,31 @@ bool CustomPlugin::dayaRefreshMissionFromVehicle(void)
         return false;
     }
     vehicle->missionManager()->loadFromVehicle();
+    return true;
+}
+
+bool CustomPlugin::dayaLoadDronePlanInPlanView(QObject *planMaster, int mavId)
+{
+    if (planMaster == nullptr || mavId <= 0) {
+        return false;
+    }
+    auto *const pmc = qobject_cast<PlanMasterController *>(planMaster);
+    if (pmc == nullptr) {
+        qCWarning(CustomLog) << "dayaLoadDronePlanInPlanView: planMaster is not a PlanMasterController";
+        return false;
+    }
+    const QString dirPath = _dayaMissionsAutosendDir();
+    if (dirPath.isEmpty()) {
+        return false;
+    }
+    const QString path = QDir(dirPath).absoluteFilePath(QStringLiteral("drone-%1.plan").arg(mavId));
+    const QFileInfo fi(path);
+    if (!fi.exists() || fi.size() < 32) {
+        qCInfo(CustomLog) << "dayaLoadDronePlanInPlanView: no plan file" << path;
+        return false;
+    }
+    pmc->loadFromFile(path);
+    qCInfo(CustomLog) << "Daya Plan View: loaded" << path;
     return true;
 }
 
@@ -370,6 +437,27 @@ void CustomPlugin::postSaveToJson(PlanMasterController *pController, QJsonObject
     region[QStringLiteral("version")] = 1;
     region[QStringLiteral("vertices")] = _pendingDayaRegionVertices;
     json[QStringLiteral("dayaRegionPolygon")] = region;
+
+    const QString paramsPath = dayaStationParamsSavePath();
+    QFile pf(paramsPath);
+    if (pf.open(QIODevice::ReadOnly)) {
+        QJsonParseError perr{};
+        const QJsonDocument pdoc = QJsonDocument::fromJson(pf.readAll(), &perr);
+        if (perr.error == QJsonParseError::NoError && pdoc.isObject()) {
+            const QJsonObject params = pdoc.object();
+            json[QStringLiteral("dayaStationParams")] = params;
+            const QJsonValue altV = params.value(QStringLiteral("survey_alt_m"));
+            if (altV.isDouble()) {
+                QJsonObject mission = json.value(QStringLiteral("mission")).toObject();
+                QJsonArray home = mission.value(QStringLiteral("plannedHomePosition")).toArray();
+                if (home.size() >= 3) {
+                    home[2] = altV.toDouble();
+                    mission.insert(QStringLiteral("plannedHomePosition"), home);
+                    json.insert(QStringLiteral("mission"), mission);
+                }
+            }
+        }
+    }
 }
 
 void CustomPlugin::cleanup()

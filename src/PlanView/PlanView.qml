@@ -48,6 +48,8 @@ Item {
         const c = _missionController.dayaPlanVisualColor
         return (c && c.length > 0) ? c : _planDayaPathColorFallback
     }
+    property int _dayaPlanLoadAttempts: 0
+    property int _dayaLoadedVehicleId: -1
 
     readonly property int _layerMission: 1
     readonly property int _layerFence: 2
@@ -57,7 +59,42 @@ Item {
         if(visible) {
             editorMap.zoomLevel = QGroundControl.flightMapZoom
             editorMap.center    = QGroundControl.flightMapPosition
+            _dayaPlanLoadAttempts = 0
+            dayaPlanLoadRetry.start()
+            _dayaTryLoadCurrentDronePlan()
+        } else {
+            dayaPlanLoadRetry.stop()
         }
+    }
+
+    function _dayaTryLoadCurrentDronePlan() {
+        if (!visible) {
+            return
+        }
+        const v = _planMasterController.controllerVehicle
+        if (!v || typeof DayaCustom === "undefined") {
+            if (_dayaPlanLoadAttempts++ < 20) {
+                dayaPlanLoadRetry.restart()
+            }
+            return
+        }
+        if (_dayaLoadedVehicleId === v.id && _visualItems && _visualItems.count > 1) {
+            return
+        }
+        if (DayaCustom.dayaLoadDronePlanInPlanView(_planMasterController, v.id)) {
+            _dayaLoadedVehicleId = v.id
+            return
+        }
+        if (_dayaPlanLoadAttempts++ < 20) {
+            dayaPlanLoadRetry.restart()
+        }
+    }
+
+    Timer {
+        id: dayaPlanLoadRetry
+        interval: 1000
+        repeat: false
+        onTriggered: _dayaTryLoadCurrentDronePlan()
     }
 
     Connections {
