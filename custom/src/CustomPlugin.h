@@ -72,10 +72,30 @@ public:
     /// Target path for Daya "Execute" (env `DAYA_AREA_SCAN_PLAN` full path, else `DAYA_AREA_PLAN_DIR`/area.plan, else Documents/…).
     Q_INVOKABLE QString areaScanPlanSavePath() const;
 
+    /// Target path for the "Add beacons" Execute (env `DAYA_BEACONS_PLAN`, else `beacons_locations.plan` in the parent of the area-scan dir, i.e. `data/`).
+    Q_INVOKABLE QString beaconsPlanSavePath() const;
+
+    /// Save dropped beacon markers into a QGC .plan file (adds top-level `dayaBeacons` for downstream tools). Requires at least one beacon.
+    Q_INVOKABLE bool saveBeaconsPlan(QObject *planMaster, const QString &filePath, const QVariantList &beaconCoordinates);
+
+    /// Target path for the "Navaid zone" Execute (`navaid_zone.plan` in the parent of the area-scan dir, i.e. `data/`).
+    Q_INVOKABLE QString navaidZonePlanSavePath() const;
+
+    /// Save the navaid-zone polygon into a QGC .plan file (adds top-level `dayaNavaidZonePolygon`). Requires at least 3 vertices.
+    Q_INVOKABLE bool saveNavaidZonePlan(QObject *planMaster, const QString &filePath, const QVariantList &polygonCoordinates);
+
     /// ``daya_station_params.json`` next to ``area.plan`` (survey altitude, revisit interval, camera HFOV for the Station app).
     Q_INVOKABLE QString dayaStationParamsSavePath(void) const;
     Q_INVOKABLE QVariantMap loadDayaStationParams(void) const;
-    Q_INVOKABLE bool saveDayaStationParams(double surveyAltM, double revisitS, double cameraHfovDeg);
+    /// ``requestedDroneCount`` / ``splitDroneCount`` &lt; 1 omits that field from JSON.
+    Q_INVOKABLE bool saveDayaStationParams(
+        double surveyAltM,
+        double revisitS,
+        double cameraHfovDeg,
+        int requestedDroneCount = -1,
+        int splitDroneCount = -1);
+    /// Connected MAVLink vehicles in QGC (0 when none).
+    Q_INVOKABLE int dayaConnectedVehicleCount(void) const;
 
     /// Pull mission (and follow-on geo/rally chain) from the active vehicle into QGC. Safe from Fly view.
     Q_INVOKABLE bool dayaRefreshMissionFromVehicle(void);
@@ -115,6 +135,8 @@ private:
     QVariantList _customSettingsList; // Not to be mixed up with QGCCorePlugin implementation
 
     QJsonArray _pendingDayaRegionVertices;
+    QJsonArray _pendingDayaBeacons;
+    QJsonArray _pendingDayaNavaidVertices;
     static QJsonArray _variantListToVertexJson(const QVariantList &list);
 
     QFileSystemWatcher *_missionsAutosendWatcher = nullptr;

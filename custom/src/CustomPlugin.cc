@@ -4,6 +4,7 @@
 #include "ParameterManager.h"
 #include "PlanMasterController.h"
 #include "QmlComponentInfo.h"
+#include "QmlObjectListModel.h"
 #include "QGCLoggingCategory.h"
 #include "QGCPalette.h"
 #include "QGCMAVLink.h"
@@ -309,12 +310,52 @@ QString CustomPlugin::dayaStationParamsSavePath(void) const
     return QFileInfo(fi.absoluteDir(), QStringLiteral("daya_station_params.json")).absoluteFilePath();
 }
 
+QString CustomPlugin::navaidZonePlanSavePath() const
+{
+    // One level above the area-scan dir (area.plan lives in e.g. data/area_to_scan, navaid_zone.plan in data/).
+    const QFileInfo areaFi(areaScanPlanSavePath());
+    QDir dir(areaFi.absolutePath());
+    if (!dir.cdUp()) {
+        dir = QDir(areaFi.absolutePath());
+    }
+    return dir.absoluteFilePath(QStringLiteral("navaid_zone.plan"));
+}
+
+QString CustomPlugin::beaconsPlanSavePath() const
+{
+    const QByteArray fullPath = qgetenv("DAYA_BEACONS_PLAN");
+    if (!fullPath.isEmpty()) {
+        return QString::fromUtf8(fullPath);
+    }
+    // Default: one level above the area-scan dir (area.plan lives in e.g. data/area_to_scan, beacons in data/).
+    const QFileInfo areaFi(areaScanPlanSavePath());
+    QDir dir(areaFi.absolutePath());
+    if (!dir.cdUp()) {
+        dir = QDir(areaFi.absolutePath());
+    }
+    return dir.absoluteFilePath(QStringLiteral("beacons_locations.plan"));
+}
+
+int CustomPlugin::dayaConnectedVehicleCount(void) const
+{
+    MultiVehicleManager *const mvm = MultiVehicleManager::instance();
+    if (mvm == nullptr) {
+        return 0;
+    }
+    QmlObjectListModel *const vehicles = mvm->vehicles();
+    if (vehicles == nullptr) {
+        return 0;
+    }
+    return vehicles->count();
+}
+
 QVariantMap CustomPlugin::loadDayaStationParams(void) const
 {
     QVariantMap m;
     m.insert(QStringLiteral("survey_alt_m"), 30.0);
     m.insert(QStringLiteral("revisit_s"), 8.0);
     m.insert(QStringLiteral("camera_hfov_deg"), 78.0);
+    m.insert(QStringLiteral("drone_count"), 3);
     const QString path = dayaStationParamsSavePath();
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) {
@@ -335,10 +376,21 @@ QVariantMap CustomPlugin::loadDayaStationParams(void) const
     if (const QJsonValue v = o.value(QStringLiteral("camera_hfov_deg")); v.isDouble()) {
         m.insert(QStringLiteral("camera_hfov_deg"), v.toDouble());
     }
+    if (const QJsonValue dc = o.value(QStringLiteral("drone_count")); dc.isDouble()) {
+        m.insert(QStringLiteral("drone_count"), dc.toInt());
+    }
+    if (const QJsonValue sc = o.value(QStringLiteral("split_drone_count")); sc.isDouble()) {
+        m.insert(QStringLiteral("split_drone_count"), sc.toInt());
+    }
     return m;
 }
 
-bool CustomPlugin::saveDayaStationParams(double surveyAltM, double revisitS, double cameraHfovDeg)
+bool CustomPlugin::saveDayaStationParams(
+    double surveyAltM,
+    double revisitS,
+    double cameraHfovDeg,
+    int requestedDroneCount,
+    int splitDroneCount)
 {
     const QString path = dayaStationParamsSavePath();
     const QFileInfo fi(path);
@@ -351,6 +403,12 @@ bool CustomPlugin::saveDayaStationParams(double surveyAltM, double revisitS, dou
     o.insert(QStringLiteral("survey_alt_m"), surveyAltM);
     o.insert(QStringLiteral("revisit_s"), revisitS);
     o.insert(QStringLiteral("camera_hfov_deg"), cameraHfovDeg);
+    if (requestedDroneCount >= 1) {
+        o.insert(QStringLiteral("drone_count"), requestedDroneCount);
+    }
+    if (splitDroneCount >= 1) {
+        o.insert(QStringLiteral("split_drone_count"), splitDroneCount);
+    }
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         qCWarning(CustomLog) << "saveDayaStationParams: open failed" << path;
@@ -427,9 +485,73 @@ bool CustomPlugin::saveFlyViewRegionPlan(QObject *planMaster, const QString &fil
     return ok;
 }
 
+bool CustomPlugin::saveBeaconsPlan(QObject *planMaster, const QString &filePath, const QVariantList &beaconCoordinates)
+{
+    auto *pm = qobject_cast<PlanMasterController *>(planMaster);
+    if (!pm) {
+        qCWarning(CustomLog) << "saveBeaconsPlan: planMaster is not a PlanMasterController";
+        return false;
+    }
+    const QJsonArray beacons = _variantListToVertexJson(beaconCoordinates);
+    if (beacons.isEmpty()) {
+        qCWarning(CustomLog) << "saveBeaconsPlan: need at least one beacon";
+        return false;
+    }
+    const QFileInfo fi(filePath);
+    if (!QDir().mkpath(fi.absolutePath())) {
+        qCWarning(CustomLog) << "saveBeaconsPlan: failed to create directory" << fi.absolutePath();
+        return false;
+    }
+    _pendingDayaBeacons = beacons;
+    const bool ok = pm->saveToFile(filePath);
+    _pendingDayaBeacons = QJsonArray();
+    if (ok) {
+        qCInfo(CustomLog) << "Daya beacons saved" << filePath << "count" << beacons.size();
+    }
+    return ok;
+}
+
+bool CustomPlugin::saveNavaidZonePlan(QObject *planMaster, const QString &filePath, const QVariantList &polygonCoordinates)
+{
+    auto *pm = qobject_cast<PlanMasterController *>(planMaster);
+    if (!pm) {
+        qCWarning(CustomLog) << "saveNavaidZonePlan: planMaster is not a PlanMasterController";
+        return false;
+    }
+    const QJsonArray verts = _variantListToVertexJson(polygonCoordinates);
+    if (verts.size() < 3) {
+        qCWarning(CustomLog) << "saveNavaidZonePlan: need at least 3 vertices";
+        return false;
+    }
+    const QFileInfo fi(filePath);
+    if (!QDir().mkpath(fi.absolutePath())) {
+        qCWarning(CustomLog) << "saveNavaidZonePlan: failed to create directory" << fi.absolutePath();
+        return false;
+    }
+    _pendingDayaNavaidVertices = verts;
+    const bool ok = pm->saveToFile(filePath);
+    _pendingDayaNavaidVertices = QJsonArray();
+    if (ok) {
+        qCInfo(CustomLog) << "Daya navaid zone saved" << filePath << "vertices" << verts.size();
+    }
+    return ok;
+}
+
 void CustomPlugin::postSaveToJson(PlanMasterController *pController, QJsonObject &json)
 {
     QGCCorePlugin::postSaveToJson(pController, json);
+    if (!_pendingDayaBeacons.isEmpty()) {
+        QJsonObject beacons;
+        beacons[QStringLiteral("version")] = 1;
+        beacons[QStringLiteral("points")] = _pendingDayaBeacons;
+        json[QStringLiteral("dayaBeacons")] = beacons;
+    }
+    if (!_pendingDayaNavaidVertices.isEmpty()) {
+        QJsonObject zone;
+        zone[QStringLiteral("version")] = 1;
+        zone[QStringLiteral("vertices")] = _pendingDayaNavaidVertices;
+        json[QStringLiteral("dayaNavaidZonePolygon")] = zone;
+    }
     if (_pendingDayaRegionVertices.isEmpty()) {
         return;
     }

@@ -40,6 +40,8 @@ Item {
         if (_dayaRegionFinished)
             _dayaRegionCoords = []
         _dayaRegionFinished = false
+        _dayaBeaconDrawActive = false
+        _dayaNavaidDrawActive = false
         _dayaRegionDrawActive = !_dayaRegionDrawActive
     }
 
@@ -59,6 +61,80 @@ Item {
         return out
     }
 
+    // --- Daya "beacons": star markers on the Fly map, saved to beacons_locations.plan ---
+    property var  _dayaBeaconCoords:      []
+    property bool _dayaBeaconDrawActive:  false
+
+    function _dayaAddBeacon(coord) {
+        if (!coord || !coord.isValid)
+            return
+        _dayaBeaconCoords = _dayaBeaconCoords.concat([coord])
+    }
+
+    function _dayaClearBeacons() {
+        _dayaBeaconCoords = []
+        _dayaBeaconDrawActive = false
+    }
+
+    function _dayaToggleBeaconDraw() {
+        // Only one draw mode active at a time so a map tap is unambiguous.
+        _dayaRegionDrawActive = false
+        _dayaNavaidDrawActive = false
+        _dayaBeaconDrawActive = !_dayaBeaconDrawActive
+    }
+
+    function _dayaBeaconsVariantListForSave() {
+        var out = []
+        for (var i = 0; i < _dayaBeaconCoords.length; i++) {
+            var c = _dayaBeaconCoords[i]
+            out.push({ latitude: c.latitude, longitude: c.longitude })
+        }
+        return out
+    }
+
+    // --- Daya "navaid zone": a second polygon (red), saved to navaid_zone.plan ---
+    property var  _dayaNavaidCoords:       []
+    property bool _dayaNavaidDrawActive:   false
+    property bool _dayaNavaidFinished:     false
+
+    function _dayaAppendNavaidVertex(coord) {
+        if (_dayaNavaidFinished || !coord || !coord.isValid)
+            return
+        _dayaNavaidCoords = _dayaNavaidCoords.concat([coord])
+    }
+
+    function _dayaClearNavaid() {
+        _dayaNavaidCoords = []
+        _dayaNavaidFinished = false
+        _dayaNavaidDrawActive = false
+    }
+
+    function _dayaToggleNavaidDraw() {
+        // Only one draw mode active at a time so a map tap is unambiguous.
+        _dayaRegionDrawActive = false
+        _dayaBeaconDrawActive = false
+        if (_dayaNavaidFinished)
+            _dayaNavaidCoords = []
+        _dayaNavaidFinished = false
+        _dayaNavaidDrawActive = !_dayaNavaidDrawActive
+    }
+
+    function _dayaFinishNavaid() {
+        if (_dayaNavaidCoords.length < 3)
+            return
+        _dayaNavaidFinished = true
+        _dayaNavaidDrawActive = false
+    }
+
+    function _dayaNavaidVariantListForSave() {
+        var out = []
+        for (var i = 0; i < _dayaNavaidCoords.length; i++) {
+            var c = _dayaNavaidCoords[i]
+            out.push({ latitude: c.latitude, longitude: c.longitude })
+        }
+        return out
+    }
+
     Connections {
         target: mapControl
         enabled: _dayaRegionDrawActive && mapControl !== undefined && mapControl !== null
@@ -66,6 +142,96 @@ Item {
         function onMapClicked(position) {
             var c = mapControl.toCoordinate(position, false)
             _dayaAppendVertex(c)
+        }
+    }
+
+    Connections {
+        target: mapControl
+        enabled: _dayaBeaconDrawActive && mapControl !== undefined && mapControl !== null
+
+        function onMapClicked(position) {
+            var c = mapControl.toCoordinate(position, false)
+            _dayaAddBeacon(c)
+        }
+    }
+
+    Connections {
+        target: mapControl
+        enabled: _dayaNavaidDrawActive && mapControl !== undefined && mapControl !== null
+
+        function onMapClicked(position) {
+            var c = mapControl.toCoordinate(position, false)
+            _dayaAppendNavaidVertex(c)
+        }
+    }
+
+    MapPolyline {
+        id:                     _dayaNavaidOpenLine
+        parent:                 mapControl
+        z:                      QGroundControl.zOrderMapItems + 1
+        visible:                mapControl && _dayaNavaidCoords.length >= 2 && !_dayaNavaidFinished
+        line.color:             "#e03131"
+        line.width:             3
+        path:                   _dayaNavaidCoords
+    }
+
+    MapPolygon {
+        id:                     _dayaNavaidClosedPoly
+        parent:                 mapControl
+        z:                      QGroundControl.zOrderMapItems + 1
+        visible:                mapControl && _dayaNavaidFinished && _dayaNavaidCoords.length >= 3
+        color:                  Qt.rgba(0.88, 0.11, 0.11, 0.22)
+        border.color:           "#c0392b"
+        border.width:           2
+        path:                   _dayaNavaidCoords
+    }
+
+    // Star marker template. Declaring a MapQuickItem directly as a Repeater delegate does NOT
+    // register it with the map (QtLocation requires map.addMapItem). So we create + add each
+    // marker imperatively, mirroring QGC's RallyPointMapVisuals.
+    Component {
+        id: _dayaBeaconMarkerComponent
+        MapQuickItem {
+            z:              QGroundControl.zOrderMapItems + 2
+            anchorPoint.x:  sourceItem.width  / 2
+            anchorPoint.y:  sourceItem.height / 2
+            property var beaconCoordinate
+            coordinate:     beaconCoordinate
+            sourceItem: Item {
+                width:  ScreenTools.defaultFontPixelHeight * 1.6
+                height: width
+                Text {
+                    anchors.centerIn:   parent
+                    text:               "\u2605"   // ★
+                    color:              "#FFD43B"
+                    style:              Text.Outline
+                    styleColor:         "#1a1c1f"
+                    font.pointSize:     ScreenTools.largeFontPointSize
+                }
+            }
+        }
+    }
+
+    // One star per dropped beacon. The array is rebuilt on each add, so delegates (and their
+    // map items) are recreated; we add on completion and remove on destruction to avoid leaks.
+    Repeater {
+        model: _dayaBeaconCoords
+        delegate: Item {
+            property var _marker: null
+            Component.onCompleted: {
+                if (!mapControl)
+                    return
+                _marker = _dayaBeaconMarkerComponent.createObject(mapControl, { "beaconCoordinate": modelData })
+                if (_marker)
+                    mapControl.addMapItem(_marker)
+            }
+            Component.onDestruction: {
+                if (_marker) {
+                    mapControl.removeMapItem(_marker)
+                    _marker.destroy()
+                    _marker = null
+                }
+            }
         }
     }
 
@@ -141,10 +307,15 @@ Item {
                         if (!_planMaster)
                             return
                         _dayaFinishRegion()
+                        var requested = Math.max(1, Math.floor(Number(droneCountField.text) || 1))
+                        var connected = DayaCustom.dayaConnectedVehicleCount()
+                        var splitN = connected > 0 ? connected : requested
                         DayaCustom.saveDayaStationParams(
                             Number(surveyAltField.text),
                             Number(revisitField.text),
-                            Number(hfovField.text))
+                            Number(hfovField.text),
+                            requested,
+                            splitN)
                         var path = DayaCustom.areaScanPlanSavePath()
                         DayaCustom.saveFlyViewRegionPlan(_planMaster, path, _dayaCoordsVariantListForSave())
                     }
@@ -182,9 +353,17 @@ Item {
             var sa = (p["survey_alt_m"] !== undefined) ? p["survey_alt_m"] : 30
             var rv = (p["revisit_s"] !== undefined) ? p["revisit_s"] : 8
             var hf = (p["camera_hfov_deg"] !== undefined) ? p["camera_hfov_deg"] : 78
+            var dc = (p["drone_count"] !== undefined) ? p["drone_count"] : 3
             surveyAltField.text = Number(sa).toFixed(1)
             revisitField.text = Number(rv).toFixed(1)
             hfovField.text = Number(hf).toFixed(1)
+            droneCountField.text = String(Math.max(1, Math.floor(Number(dc) || 1)))
+        }
+
+        function _dayaEffectiveSplitCount() {
+            var requested = Math.max(1, Math.floor(Number(droneCountField.text) || 1))
+            var connected = DayaCustom.dayaConnectedVehicleCount()
+            return connected > 0 ? connected : requested
         }
 
         Column {
@@ -212,6 +391,32 @@ Item {
                     width:                  ScreenTools.defaultFontPixelWidth * 10
                     numericValuesOnly:      true
                     font.pointSize:         ScreenTools.smallFontPointSize
+                }
+            }
+            Row {
+                spacing: dayaStationParamsPanel.pad
+                QGCLabel {
+                    text:                   qsTr("Drones (split):")
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                    color:                  qgcPal.text
+                }
+                QGCTextField {
+                    id:                     droneCountField
+                    width:                  ScreenTools.defaultFontPixelWidth * 6
+                    numericValuesOnly:      true
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                }
+                QGCLabel {
+                    text: {
+                        var c = DayaCustom.dayaConnectedVehicleCount()
+                        return c > 0
+                            ? qsTr("(%1 connected — Execute uses %1)").arg(c)
+                            : qsTr("(no vehicles — uses count above)")
+                    }
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                    color:                  qgcPal.warningText
+                    wrapMode:               Text.WordWrap
+                    width:                  ScreenTools.defaultFontPixelWidth * 18
                 }
             }
             Row {
@@ -245,7 +450,13 @@ Item {
             QGCButton {
                 text:       qsTr("Save station params")
                 onClicked:  {
-                    var ok = DayaCustom.saveDayaStationParams(Number(surveyAltField.text), Number(revisitField.text), Number(hfovField.text))
+                    var requested = Math.max(1, Math.floor(Number(droneCountField.text) || 1))
+                    var ok = DayaCustom.saveDayaStationParams(
+                        Number(surveyAltField.text),
+                        Number(revisitField.text),
+                        Number(hfovField.text),
+                        requested,
+                        -1)
                     if (ok) {
                         dayaStationParamsPanel._dayaReloadStationParams()
                     }
@@ -253,6 +464,136 @@ Item {
             }
 
             Component.onCompleted: dayaStationParamsPanel._dayaReloadStationParams()
+        }
+    }
+
+    Rectangle {
+        id:                     dayaBeaconsPanel
+        readonly property real pad: ScreenTools.defaultFontPixelWidth * 0.5
+        anchors.left:           parent.left
+        anchors.top:            dayaStationParamsPanel.bottom
+        anchors.margins:        _toolsMargin
+        anchors.topMargin:      _toolsMargin
+        width:                  dayaBeaconsCol.implicitWidth + pad * 2
+        height:                 dayaBeaconsCol.implicitHeight + pad * 2
+        radius:                 4
+        color:                  qgcPal.windowShade
+        opacity:                0.94
+        border.width:           1
+        border.color:           qgcPal.buttonBorder
+
+        Column {
+            id:                     dayaBeaconsCol
+            anchors.centerIn:       parent
+            spacing:                dayaBeaconsPanel.pad
+
+            QGCLabel {
+                width:                  ScreenTools.defaultFontPixelWidth * 28
+                wrapMode:               Text.WordWrap
+                text:                   qsTr("Beacons (map markers — saved to beacons_locations.plan)")
+                font.pointSize:         ScreenTools.smallFontPointSize
+                color:                  qgcPal.text
+            }
+
+            QGCLabel {
+                visible:                _dayaBeaconDrawActive
+                width:                  ScreenTools.defaultFontPixelWidth * 28
+                text:                   qsTr("Tap map to drop beacon stars. Press Execute to save beacons_locations.plan. Tap Add beacons again to stop placing.")
+                font.pointSize:         ScreenTools.smallFontPointSize
+                color:                  qgcPal.warningText
+                wrapMode:               Text.WordWrap
+            }
+
+            QGCLabel {
+                text:                   qsTr("Beacons placed: %1").arg(_dayaBeaconCoords.length)
+                font.pointSize:         ScreenTools.smallFontPointSize
+                color:                  qgcPal.text
+            }
+
+            Row {
+                spacing: dayaBeaconsPanel.pad
+                QGCButton {
+                    text:       _dayaBeaconDrawActive ? qsTr("Stop adding") : qsTr("Add beacons")
+                    onClicked:  _dayaToggleBeaconDraw()
+                }
+                QGCButton {
+                    text:       qsTr("Execute")
+                    enabled:    _dayaBeaconCoords.length >= 1 && _planMaster !== null
+                    onClicked:  {
+                        if (!_planMaster)
+                            return
+                        _dayaBeaconDrawActive = false
+                        var path = DayaCustom.beaconsPlanSavePath()
+                        DayaCustom.saveBeaconsPlan(_planMaster, path, _dayaBeaconsVariantListForSave())
+                    }
+                }
+                QGCButton {
+                    text:       qsTr("Clear")
+                    onClicked:  _dayaClearBeacons()
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        id:                     dayaNavaidPanel
+        readonly property real pad: ScreenTools.defaultFontPixelWidth * 0.5
+        anchors.left:           parent.left
+        anchors.top:            dayaBeaconsPanel.bottom
+        anchors.margins:        _toolsMargin
+        anchors.topMargin:      _toolsMargin
+        width:                  dayaNavaidCol.implicitWidth + pad * 2
+        height:                 dayaNavaidCol.implicitHeight + pad * 2
+        radius:                 4
+        color:                  qgcPal.windowShade
+        opacity:                0.94
+        border.width:           1
+        border.color:           qgcPal.buttonBorder
+
+        Column {
+            id:                     dayaNavaidCol
+            anchors.centerIn:       parent
+            spacing:                dayaNavaidPanel.pad
+
+            QGCLabel {
+                width:                  ScreenTools.defaultFontPixelWidth * 28
+                wrapMode:               Text.WordWrap
+                text:                   qsTr("Navaid zone (red polygon — map only, saved to navaid_zone.plan)")
+                font.pointSize:         ScreenTools.smallFontPointSize
+                color:                  qgcPal.text
+            }
+
+            QGCLabel {
+                visible:                _dayaNavaidDrawActive
+                width:                  ScreenTools.defaultFontPixelWidth * 28
+                text:                   qsTr("Tap map to add corners (≥3), then Execute to close the zone and save navaid_zone.plan. Tap Draw zone again to stop outlining.")
+                font.pointSize:         ScreenTools.smallFontPointSize
+                color:                  qgcPal.warningText
+                wrapMode:               Text.WordWrap
+            }
+
+            Row {
+                spacing: dayaNavaidPanel.pad
+                QGCButton {
+                    text:       _dayaNavaidDrawActive ? qsTr("Stop drawing") : qsTr("Draw zone")
+                    onClicked:  _dayaToggleNavaidDraw()
+                }
+                QGCButton {
+                    text:       qsTr("Execute")
+                    enabled:    _dayaNavaidCoords.length >= 3 && _planMaster !== null
+                    onClicked:  {
+                        if (!_planMaster)
+                            return
+                        _dayaFinishNavaid()
+                        var path = DayaCustom.navaidZonePlanSavePath()
+                        DayaCustom.saveNavaidZonePlan(_planMaster, path, _dayaNavaidVariantListForSave())
+                    }
+                }
+                QGCButton {
+                    text:       qsTr("Clear")
+                    onClicked:  _dayaClearNavaid()
+                }
+            }
         }
     }
 
