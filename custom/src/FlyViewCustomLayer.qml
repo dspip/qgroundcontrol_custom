@@ -19,6 +19,13 @@ Item {
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
+    // --- Daya control-panel styling: white background + larger, dark text for field readability ---
+    readonly property color _dayaPanelBg:       "#ffffff"
+    readonly property color _dayaPanelBorder:   "#9aa0a6"
+    readonly property color _dayaPanelText:     "#15181c"
+    readonly property color _dayaPanelWarnText: "#b35900"
+    readonly property real  _dayaPanelFontPt:   ScreenTools.largeFontPointSize
+
     // --- Daya "region" polygon: visual only on Fly map (not mission path, not geofence) ---
     property var  _dayaRegionCoords:       []
     property bool _dayaRegionDrawActive:   false
@@ -267,10 +274,10 @@ Item {
         width:                  dayaRegionCol.implicitWidth + pad * 2
         height:                 dayaRegionCol.implicitHeight + pad * 2
         radius:                 4
-        color:                    qgcPal.windowShade
-        opacity:                0.94
+        color:                  _dayaPanelBg
+        opacity:                1.0
         border.width:           1
-        border.color:           qgcPal.buttonBorder
+        border.color:           _dayaPanelBorder
 
         Column {
             id:                     dayaRegionCol
@@ -281,16 +288,16 @@ Item {
                 width:                  ScreenTools.defaultFontPixelWidth * 28
                 wrapMode:               Text.WordWrap
                 text:                   qsTr("Daya region (map only — not mission, not geofence)")
-                font.pointSize:         ScreenTools.smallFontPointSize
-                color:                  qgcPal.text
+                font.pointSize:         _dayaPanelFontPt
+                color:                  _dayaPanelText
             }
 
             QGCLabel {
                 visible:                _dayaRegionDrawActive
                 width:                  ScreenTools.defaultFontPixelWidth * 28
                 text:                   qsTr("Tap map to add corners (≥3), then Execute to close the region and save area.plan. Tap Plan mission again to stop outlining.")
-                font.pointSize:         ScreenTools.smallFontPointSize
-                color:                  qgcPal.warningText
+                font.pointSize:         _dayaPanelFontPt
+                color:                  _dayaPanelWarnText
                 wrapMode:               Text.WordWrap
             }
 
@@ -298,10 +305,12 @@ Item {
                 spacing: dayaRegionPanel.pad
                 QGCButton {
                     text:       qsTr("Plan mission")
+                    font.pointSize: _dayaPanelFontPt
                     onClicked:  _dayaToggleDraw()
                 }
                 QGCButton {
                     text:       qsTr("Execute")
+                    font.pointSize: _dayaPanelFontPt
                     enabled:    _dayaRegionCoords.length >= 3 && _planMaster !== null
                     onClicked:  {
                         if (!_planMaster)
@@ -322,11 +331,13 @@ Item {
                 }
                 QGCButton {
                     text:       qsTr("Refresh")
+                    font.pointSize: _dayaPanelFontPt
                     enabled:    QGroundControl.multiVehicleManager.activeVehicle !== null
                     onClicked:  DayaCustom.dayaRefreshMissionFromVehicle()
                 }
                 QGCButton {
                     text:       qsTr("Clear")
+                    font.pointSize: _dayaPanelFontPt
                     onClicked:  _dayaClearRegion()
                 }
             }
@@ -343,10 +354,10 @@ Item {
         width:                  dayaStationParamsCol.implicitWidth + pad * 2
         height:                 dayaStationParamsCol.implicitHeight + pad * 2
         radius:                 4
-        color:                  qgcPal.windowShade
-        opacity:                0.94
+        color:                  _dayaPanelBg
+        opacity:                1.0
         border.width:           1
-        border.color:           qgcPal.buttonBorder
+        border.color:           _dayaPanelBorder
 
         function _dayaReloadStationParams() {
             var p = DayaCustom.loadDayaStationParams()
@@ -374,8 +385,8 @@ Item {
             QGCLabel {
                 width:                  ScreenTools.defaultFontPixelWidth * 28
                 wrapMode:               Text.WordWrap
-                font.pointSize:         ScreenTools.smallFontPointSize
-                color:                  qgcPal.text
+                font.pointSize:         _dayaPanelFontPt
+                color:                  _dayaPanelText
                 text:                   qsTr("Station scan params (saved on Execute and to daya_station_params.json). Survey alt sets waypoint height and line spacing.")
             }
 
@@ -383,28 +394,28 @@ Item {
                 spacing: dayaStationParamsPanel.pad
                 QGCLabel {
                     text:                   qsTr("Survey alt (m):")
-                    font.pointSize:         ScreenTools.smallFontPointSize
-                    color:                  qgcPal.text
+                    font.pointSize:         _dayaPanelFontPt
+                    color:                  _dayaPanelText
                 }
                 QGCTextField {
                     id:                     surveyAltField
                     width:                  ScreenTools.defaultFontPixelWidth * 10
                     numericValuesOnly:      true
-                    font.pointSize:         ScreenTools.smallFontPointSize
+                    font.pointSize:         _dayaPanelFontPt
                 }
             }
             Row {
                 spacing: dayaStationParamsPanel.pad
                 QGCLabel {
                     text:                   qsTr("Drones (split):")
-                    font.pointSize:         ScreenTools.smallFontPointSize
-                    color:                  qgcPal.text
+                    font.pointSize:         _dayaPanelFontPt
+                    color:                  _dayaPanelText
                 }
                 QGCTextField {
                     id:                     droneCountField
                     width:                  ScreenTools.defaultFontPixelWidth * 6
                     numericValuesOnly:      true
-                    font.pointSize:         ScreenTools.smallFontPointSize
+                    font.pointSize:         _dayaPanelFontPt
                 }
                 QGCLabel {
                     text: {
@@ -413,8 +424,8 @@ Item {
                             ? qsTr("(%1 connected — Execute uses %1)").arg(c)
                             : qsTr("(no vehicles — uses count above)")
                     }
-                    font.pointSize:         ScreenTools.smallFontPointSize
-                    color:                  qgcPal.warningText
+                    font.pointSize:         _dayaPanelFontPt
+                    color:                  _dayaPanelWarnText
                     wrapMode:               Text.WordWrap
                     width:                  ScreenTools.defaultFontPixelWidth * 18
                 }
@@ -423,32 +434,33 @@ Item {
                 spacing: dayaStationParamsPanel.pad
                 QGCLabel {
                     text:                   qsTr("Revisit (s):")
-                    font.pointSize:         ScreenTools.smallFontPointSize
-                    color:                  qgcPal.text
+                    font.pointSize:         _dayaPanelFontPt
+                    color:                  _dayaPanelText
                 }
                 QGCTextField {
                     id:                     revisitField
                     width:                  ScreenTools.defaultFontPixelWidth * 10
                     numericValuesOnly:      true
-                    font.pointSize:         ScreenTools.smallFontPointSize
+                    font.pointSize:         _dayaPanelFontPt
                 }
             }
             Row {
                 spacing: dayaStationParamsPanel.pad
                 QGCLabel {
                     text:                   qsTr("Camera HFOV (°):")
-                    font.pointSize:         ScreenTools.smallFontPointSize
-                    color:                  qgcPal.text
+                    font.pointSize:         _dayaPanelFontPt
+                    color:                  _dayaPanelText
                 }
                 QGCTextField {
                     id:                     hfovField
                     width:                  ScreenTools.defaultFontPixelWidth * 10
                     numericValuesOnly:      true
-                    font.pointSize:         ScreenTools.smallFontPointSize
+                    font.pointSize:         _dayaPanelFontPt
                 }
             }
             QGCButton {
                 text:       qsTr("Save station params")
+                font.pointSize: _dayaPanelFontPt
                 onClicked:  {
                     var requested = Math.max(1, Math.floor(Number(droneCountField.text) || 1))
                     var ok = DayaCustom.saveDayaStationParams(
@@ -477,10 +489,10 @@ Item {
         width:                  dayaBeaconsCol.implicitWidth + pad * 2
         height:                 dayaBeaconsCol.implicitHeight + pad * 2
         radius:                 4
-        color:                  qgcPal.windowShade
-        opacity:                0.94
+        color:                  _dayaPanelBg
+        opacity:                1.0
         border.width:           1
-        border.color:           qgcPal.buttonBorder
+        border.color:           _dayaPanelBorder
 
         Column {
             id:                     dayaBeaconsCol
@@ -491,33 +503,35 @@ Item {
                 width:                  ScreenTools.defaultFontPixelWidth * 28
                 wrapMode:               Text.WordWrap
                 text:                   qsTr("Beacons (map markers — saved to beacons_locations.plan)")
-                font.pointSize:         ScreenTools.smallFontPointSize
-                color:                  qgcPal.text
+                font.pointSize:         _dayaPanelFontPt
+                color:                  _dayaPanelText
             }
 
             QGCLabel {
                 visible:                _dayaBeaconDrawActive
                 width:                  ScreenTools.defaultFontPixelWidth * 28
                 text:                   qsTr("Tap map to drop beacon stars. Press Execute to save beacons_locations.plan. Tap Add beacons again to stop placing.")
-                font.pointSize:         ScreenTools.smallFontPointSize
-                color:                  qgcPal.warningText
+                font.pointSize:         _dayaPanelFontPt
+                color:                  _dayaPanelWarnText
                 wrapMode:               Text.WordWrap
             }
 
             QGCLabel {
                 text:                   qsTr("Beacons placed: %1").arg(_dayaBeaconCoords.length)
-                font.pointSize:         ScreenTools.smallFontPointSize
-                color:                  qgcPal.text
+                font.pointSize:         _dayaPanelFontPt
+                color:                  _dayaPanelText
             }
 
             Row {
                 spacing: dayaBeaconsPanel.pad
                 QGCButton {
                     text:       _dayaBeaconDrawActive ? qsTr("Stop adding") : qsTr("Add beacons")
+                    font.pointSize: _dayaPanelFontPt
                     onClicked:  _dayaToggleBeaconDraw()
                 }
                 QGCButton {
                     text:       qsTr("Execute")
+                    font.pointSize: _dayaPanelFontPt
                     enabled:    _dayaBeaconCoords.length >= 1 && _planMaster !== null
                     onClicked:  {
                         if (!_planMaster)
@@ -529,6 +543,7 @@ Item {
                 }
                 QGCButton {
                     text:       qsTr("Clear")
+                    font.pointSize: _dayaPanelFontPt
                     onClicked:  _dayaClearBeacons()
                 }
             }
@@ -545,10 +560,10 @@ Item {
         width:                  dayaNavaidCol.implicitWidth + pad * 2
         height:                 dayaNavaidCol.implicitHeight + pad * 2
         radius:                 4
-        color:                  qgcPal.windowShade
-        opacity:                0.94
+        color:                  _dayaPanelBg
+        opacity:                1.0
         border.width:           1
-        border.color:           qgcPal.buttonBorder
+        border.color:           _dayaPanelBorder
 
         Column {
             id:                     dayaNavaidCol
@@ -559,16 +574,16 @@ Item {
                 width:                  ScreenTools.defaultFontPixelWidth * 28
                 wrapMode:               Text.WordWrap
                 text:                   qsTr("Navaid zone (red polygon — map only, saved to navaid_zone.plan)")
-                font.pointSize:         ScreenTools.smallFontPointSize
-                color:                  qgcPal.text
+                font.pointSize:         _dayaPanelFontPt
+                color:                  _dayaPanelText
             }
 
             QGCLabel {
                 visible:                _dayaNavaidDrawActive
                 width:                  ScreenTools.defaultFontPixelWidth * 28
                 text:                   qsTr("Tap map to add corners (≥3), then Execute to close the zone and save navaid_zone.plan. Tap Draw zone again to stop outlining.")
-                font.pointSize:         ScreenTools.smallFontPointSize
-                color:                  qgcPal.warningText
+                font.pointSize:         _dayaPanelFontPt
+                color:                  _dayaPanelWarnText
                 wrapMode:               Text.WordWrap
             }
 
@@ -576,10 +591,12 @@ Item {
                 spacing: dayaNavaidPanel.pad
                 QGCButton {
                     text:       _dayaNavaidDrawActive ? qsTr("Stop drawing") : qsTr("Draw zone")
+                    font.pointSize: _dayaPanelFontPt
                     onClicked:  _dayaToggleNavaidDraw()
                 }
                 QGCButton {
                     text:       qsTr("Execute")
+                    font.pointSize: _dayaPanelFontPt
                     enabled:    _dayaNavaidCoords.length >= 3 && _planMaster !== null
                     onClicked:  {
                         if (!_planMaster)
@@ -591,6 +608,7 @@ Item {
                 }
                 QGCButton {
                     text:       qsTr("Clear")
+                    font.pointSize: _dayaPanelFontPt
                     onClicked:  _dayaClearNavaid()
                 }
             }
@@ -605,10 +623,10 @@ Item {
         anchors.margins:        _toolsMargin
         anchors.topMargin:      parentToolInsets.topEdgeRightInset + _toolsMargin
         radius:                 4
-        color:                  qgcPal.windowShade
-        opacity:                0.94
+        color:                  _dayaPanelBg
+        opacity:                1.0
         border.width:           1
-        border.color:           qgcPal.buttonBorder
+        border.color:           _dayaPanelBorder
         width:                  _dayaRunStampLabel.implicitWidth + ScreenTools.defaultFontPixelWidth * 1.2
         height:                 _dayaRunStampLabel.implicitHeight + ScreenTools.defaultFontPixelHeight * 0.6
 
@@ -616,8 +634,8 @@ Item {
             id:                     _dayaRunStampLabel
             anchors.centerIn:       parent
             text:                   qsTr("Run: %1").arg(_dayaRunStamp)
-            font.pointSize:         ScreenTools.smallFontPointSize
-            color:                  qgcPal.text
+            font.pointSize:         _dayaPanelFontPt
+            color:                  _dayaPanelText
         }
     }
 
